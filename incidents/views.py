@@ -514,6 +514,11 @@ def search(request):
             except Exception:
                 pass
 
+            opened_by = re.search("opened_by:(\S+)", query_string)
+            if opened_by:
+                q = q & Q(opened_by__username=opened_by.group(1))
+                query_string = query_string.replace('opened_by:'+opened_by.group(1), '')
+
             category = re.search("category:(\S+)", query_string)
             if category:
                 q = q & Q(category__name__icontains=category.group(1))
@@ -523,6 +528,12 @@ def search(request):
             if status:
                 q = q & Q(status=status.group(1)[0])
                 query_string = query_string.replace('status:'+status.group(1), '')
+
+            artifacts = re.search("art:(\S+)", query_string)
+            if artifacts:
+                artifacts = artifacts.group(1)
+                q = q & Q(id__in=[i.id for i in libartifacts.incs_for_art(artifacts)])
+                query_string = query_string.replace('art:'+artifacts, '')
 
             if query_string.count('starred') > 0:
                 q = q & Q(is_starred=True)
@@ -546,7 +557,7 @@ def search(request):
             if query_string != ['']:
                 q_other = Q()
                 for i in other:
-                    q_other |= (Q(subject__icontains=i) | Q(description__icontains=i) | Q(comments__comment__icontains=i))
+                    q_other &= (Q(subject__icontains=i) | Q(description__icontains=i) | Q(comments__comment__icontains=i))
 
             q = (q & q_other)
 
@@ -697,12 +708,13 @@ def yearly_stats(request):
 @user_passes_test(is_incident_handler)
 def close_old(request):
     now = datetime.datetime.now()
-    old = Incident.objects.filter(date__lt=datetime.datetime(now.year, now.month, 1) - datetime.timedelta(days=90))
+    query = Q(date__lt=datetime.datetime(now.year, now.month, 1) - datetime.timedelta(days=90)) & ~Q(status="C")
+    old = Incident.objects.filter(query)
     for i in old:
         if i.status != "C":
             i.close_timeout()
 
-    return redirect('stats:quarterly_bl_stats')
+    return redirect('stats:quarterly_bl_stats_default')
 
 
 @login_required
